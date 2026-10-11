@@ -2,8 +2,10 @@ import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
+
 from app.pipeline.transformer import CryptoTransformer
 from app.pipeline.onchain import OnChianXGBoostModel
+from app.pipeline.sentiment import CryptoSentimentEngine
 
 
 
@@ -25,7 +27,8 @@ transformaer_model.eval()
 # todo - pass this model path ="model.json " when have an real model 
 onchain_model = OnChianXGBoostModel()
 
-
+# load finbert model into memory
+sentiment_engine = CryptoSentimentEngine()
 
 # define the JSON schema for validation using pydantic 
 class SequenceInput(BaseModel):
@@ -33,6 +36,11 @@ class SequenceInput(BaseModel):
 
 class OnchainInput(BaseModel):
     metrics:List[float]
+
+class SetimentInput(BaseModel):
+    headlines:List[str]
+
+
 
 
 @app.post("/predict/transformer")
@@ -71,3 +79,24 @@ def predict_onchain(data: OnChainInput):
         }
     except Exception as err:
         raise HTTPException(status_code=500, detail=str(err))
+
+
+    @app.post("/predict/sentiment")
+    def predict_setiment(data:SetimentInput):
+        # Take json array of the news Strings
+        # Passes tem to finBeart for anelysis
+        #Returns the aggregted numarical score
+
+        try:
+            if not data.headlines:
+                raise HTTPException(status_code =400, detail = "Healine LIST CANNT BE empty")
+
+            aggregate_sentiment = sentiment_engine.analyse_text(data.headlines)
+
+            return {
+                "status": "success",
+                "finbert_sentiment_score": aggregate_sentiment,
+                "articles_processed": len(data.headlines)
+            }
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str[err])
