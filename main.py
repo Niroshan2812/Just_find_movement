@@ -1,11 +1,12 @@
 import torch
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 
 from app.pipeline.transformer import CryptoTransformer
 from app.pipeline.onchain import OnChianXGBoostModel
 from app.pipeline.sentiment import CryptoSentimentEngine
+from app.pipeline.execution_rl import RLExecutoinAgent
 
 
 
@@ -30,6 +31,9 @@ onchain_model = OnChianXGBoostModel()
 # load finbert model into memory
 sentiment_engine = CryptoSentimentEngine()
 
+# initialize RL aget 
+rl_agent= RLExecutoinAgent()
+
 # define the JSON schema for validation using pydantic 
 class SequenceInput(BaseModel):
     sequence:List[List[float]]
@@ -40,7 +44,12 @@ class OnchainInput(BaseModel):
 class SetimentInput(BaseModel):
     headlines:List[str]
 
-
+class RLActionIput(BaseModel):
+    transformer_signal: float = Field(..., description="Predicted delta from Milestone 1")
+    onchain_signal: float = Field(..., description="Health score from Milestone 2 (-1.0 to 1.0)")
+    sentiment_signal: float = Field(..., description="NLP score from Milestone 3 (-1.0 to 1.0)")
+    current_position_pct: float = Field(0.0, ge=0.0, le=1.0, description="Current crypto allocation fraction (0.0 to 1.0)")
+    cash_ratio: float = Field(1.0, ge=0.0, le=1.0, description="Available liquidity/cash fraction (0.0 to 1.0)")
 
 
 @app.post("/predict/transformer")
@@ -81,8 +90,9 @@ def predict_onchain(data: OnChainInput):
         raise HTTPException(status_code=500, detail=str(err))
 
 
-    @app.post("/predict/sentiment")
-    def predict_setiment(data:SetimentInput):
+
+@app.post("/predict/sentiment")
+def predict_setiment(data:SetimentInput):
         # Take json array of the news Strings
         # Passes tem to finBeart for anelysis
         #Returns the aggregted numarical score
@@ -100,3 +110,27 @@ def predict_onchain(data: OnChainInput):
             }
         except Exception as err:
             raise HTTPException(status_code=500, detail=str[err])
+
+
+
+# --- RL Execution Endpoint ---
+@app.post("/execute/rl-action")
+def determine_execution_action(payload: RLActionIput):
+    """
+    Accepts signals from prior milestones along with current portfolio state,
+    and returns the RL agent's decision and trade allocation percentage.
+    """
+    try:
+        decision = rl_agent.select_action(
+            transformer_signal=payload.transformer_signal,
+            onchain_signal=payload.onchain_signal,
+            sentiment_signal=payload.sentiment_signal,
+            current_position_pct=payload.current_position_pct,
+            cash_ratio=payload.cash_ratio
+        )
+        return {
+            "status": "success",
+            "decision": decision
+        }
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=str(err))
